@@ -1,10 +1,13 @@
 # LLM Inference Optimization (Triton-Inference Server)
-### Setup steps:
-1. Triton server doc:
+
+Refer my technical [Blogs](https://kashifmd.github.io/blogs/) for some standard methods of LLM inference optimization
+
+### Setup steps for Llama3.2 vision model with triton inference server:
+1. The reference Triton server documentation for the model Llava1.5v-7b model:
     ```bash
     https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/tutorials/Popular_Models_Guide/Llava1.5/llava_trtllm_guide.html#launch-triton-tensorrt-llm-container
     ```
-
+    But don't worry, go through following steps for hosting Llama3.2 vision model for inferencing.
 2. Clone TensorRT-LLM Backend repository (Release tag: v0.18.2):
     ```bash
     git clone https://github.com/triton-inference-server/tensorrtllm_backend.git --branch v0.18.2
@@ -16,97 +19,98 @@
     git submodule update --init --recursive
     ```
 
+    ```markdown
+    git-lfs (Git Large File Storage) is an open-source extension for Git that handles large files by replacing them with text pointers inside Git, while the actual file contents are stored on a remote server
+    ```
+    Change `v0.18.2` with the required version that you want, be sure to have latest version if setting for the first time.
+    
+    To check latest version of TensorRT-LLM backend git repo
     LINK: `https://github.com/triton-inference-server/tensorrtllm_backend/tags`
 
 3. Create folders to be sync with Triton server:
+
+    clone the tutorials [tutorials](https://github.com/triton-inference-server/tutorials) repo of triton 
     ```bash
-    mkdir models
-    mkdir tutorials
+    git clone https://github.com/triton-inference-server/tutorials
+    ```
+    ```bash
+    # create `docker_scripts` to sync as volumes in triton container, for some other files to sync. `server` will be used for FastAPI/flask-app apis:
     mkdir docker_scripts
+    mkdir server
     ```
 
-4. Launch Triton docker container with TensorRT-LLM backend:
+4. Download Huggingface model weights:
+    ```bash
+    export MODEL_NAME_Llama_11b="Llama-3.2-11B-Vision-Instruct" # also Llama-3.2-11B-Vision-Instruct
+    git clone https://huggingface.co/meta-llama/${MODEL_NAME_Llama_11b} models/hf_models/${MODEL_NAME_Llama_11b}
+    cd /
+    ```
+    You will need huggingface `username` and `password` for this, on huggingface website create your account.
+
+5. Launch Triton docker container with TensorRT-LLM backend:
     ```bash
     sudo docker run -it --net host --shm-size=2g \
-        --ulimit memlock=-1 --ulimit stack=67108864 --gpus '"device=MIG-60d6a708-f1b0-54b0-83a0-2b396432327b,MIG-71db94d9-df33-5a82-82b8-76c07dfbc45b"' \
-        -v /home/ubuntu/kashif/llava_triton/tensorrtllm_backend:/tensorrtllm_backend \
-        -v /home/ubuntu/kashif/llava_triton/models:/models \
-        -v /home/ubuntu/kashif/llava_triton/tutorials:/tutorials \
-        -v /home/ubuntu/kashif/llava_triton/sync/docker_scripts:/docker_scripts \
+        --ulimit memlock=-1 --ulimit stack=67108864 --gpus '"device=MIG-ID-01,MIG-ID-02"' \
+        -v /rel_path_triton_server/tensorrtllm_backend:/tensorrtllm_backend \
+        -v /rel_path_triton_server/models:/models \
+        -v /rel_path_triton_server/tutorials:/tutorials \
+        -v /rel_path_triton_server/docker_scripts:/docker_scripts \
+        -v /rel_path_triton_server/server:/server   \
         -e MODEL_NAME_Llava_7b=llava-1.5-7b-hf \
         -e MODEL_NAME_Llama_11b=Llama-3.2-11B-Vision-Instruct \
         nvcr.io/nvidia/tritonserver:25.03-trtllm-python-py3
     ```
+    Change the MIG-ID-01 and MIG-ID-02 ids with your GPU ids. if there is no GPU partition remove `'"device=MIG-ID-01,MIG-ID-02"'` part.
+
+    Change `nvcr.io/nvidia/tritonserver:25.03-trtllm-python-py3` with the tag you want for your Triton server container (make it latest if using for the first time)
 
     LINK: `https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tritonserver/tags`
 
-5. Download Huggingface model weights:
+6. Set environment variables:
     ```bash
-    export MODEL_NAME_Llama_11b="Llama-3.2-11B-Vision-Instruct" # also Llama-3.2-11B-Vision-Instruct
-    git clone https://huggingface.co/meta-llama/${MODEL_NAME_Llama_11b} models/hf_models/${MODEL_NAME_Llama_11b}
-
-    cd /
+    export HF_MODEL_PATH_LLAMA=/models/hf_models/${MODEL_NAME_Llama_11b}/
+    export UNIFIED_CKPT_PATH=/models/trt_models/${MODEL_NAME_Llama_11b}/fp16/1-gpu
+    export ENGINE_PATH=/models/trt_engines/${MODEL_NAME_Llama_11b}/fp16/1-gpu
+    export MULTIMODAL_ENGINE_PATH=/models/trt_engines/${MODEL_NAME_Llama_11b}/multimodal_encoder
+    export BUILD_VISUAL=/tensorrtllm_backend/tensorrt_llm/examples/multimodal/build_visual_engine.py
+    export CONVERT_CHKPT_SCRIPT=/tensorrtllm_backend/tensorrt_llm/examples/mllama/convert_checkpoint.py
+    export LLAMA_ENCODER_ENGINE=/models/trt_engines/multimodal/${MODEL_NAME_Llama_11b}/encoder
+    export LLAMA_DECODER_ENGINE=/models/trt_engines/multimodal/${MODEL_NAME_Llama_11b}/decoder
+    export LLAMA_CHECKPOINTS=/models/trt_ckpts/multimodal/${MODEL_NAME_Llama_11b}
+    export RUN_CODE=/tensorrtllm_backend/tensorrt_llm/examples/multimodal/run.py
     ```
 
-6. Convert HuggingFace Checkpoints to TRT-LLM Format (for LLaMA Base of LLaVA):
+7. Build engine of vision encoder part of the model:
+
+    execute for the first time only,
     ```bash
-    python /tensorrtllm_backend/tensorrt_llm/examples/mllama/convert_checkpoint.py \
-        --model_dir models/hf_models/${MODEL_NAME_Llama_11b} \
-        --output_dir models/trt_models/${MODEL_NAME_Llama_11b}/fp16/1-gpu \
-        --dtype float16
+    time python ${BUILD_VISUAL} \
+        --model_type mllama \
+        --model_path ${HF_MODEL_PATH_LLAMA} \
+        --output_dir ${LLAMA_ENCODER_ENGINE}
     ```
 
-7. Build TensorRT Engine:
+8. Build engine of decoder part of the model:
 
-    a. For Langauge Encoder (LLM Part)
+    execute for the first time only,
     ```bash
-    python -m tensorrt_llm.commands.build \
-    --checkpoint_dir models/trt_models/${MODEL_NAME_Llama_11b}/fp16/1-gpu \
-    --output_dir models/trt_engines/${MODEL_NAME_Llama_11b}/llm_engine/fp16/1-gpu \
-    --max_num_tokens 4096 \
-    --max_seq_len 2048 \
-    --workers 1 \
-    --gemm_plugin auto \
-    --max_batch_size 4 \
-    --max_encoder_input_len 6404 \
-    --input_timing_cache model.cache
+    time python ${CONVERT_CHKPT_SCRIPT} \
+        --model_dir ${HF_MODEL_PATH_LLAMA} \
+        --output_dir ${LLAMA_CHECKPOINTS} \
+        --dtype bfloat16
     ```
 
-    b. For Visual Encoder (Vision Model Part of LLaVA)
     ```bash
-    python /tensorrtllm_backend/tensorrt_llm/examples/multimodal/build_visual_engine.py --model_path models/hf_models/${MODEL_NAME_Llama_11b} --model_type mllama --output_dir models/trt_engines/${MODEL_NAME_Llama_11b}/vision_engine/fp16/1-gpu
-    ```
-
-8. Test Engines:
-    Arguments:
-    ```bash
-    python /tensorrtllm_backend/tensorrt_llm/examples/multimodal/run.py --help
-    ```
-
-    For single image test:
-    ```bash
-    time python /tensorrtllm_backend/tensorrt_llm/examples/multimodal/run.py \
-    --visual_engine_dir models/trt_engines/${MODEL_NAME_Llama_11b}/vision_engine/fp16/1-gpu \
-    --visual_engine_name visual_encoder.engine \
-    --llm_engine_dir models/trt_engines/${MODEL_NAME_Llama_11b}/llm_engine/fp16/1-gpu \
-    --hf_model_dir models/hf_models/${MODEL_NAME_Llama_11b} \
-    --image_path https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg \
-    --input_text "You are a visual reasoning assistant. Carefully analyze the given image and return ONLY a valid JSON object with exactly three fields: \"alttag\", \"tags\", and \"description\".\n\nRequirements:\n- Return a valid JSON object.\n- \"alttag\": A single short sentence suitable as image alt text for SEO.\n- \"tags\": A comma-separated string containing ONLY 2 to 8 short, relevant keywords. Avoid repetition or abstract concepts.\n- \"description\": The longest and most detailed description of the image, covering layout, objects, colors, style, and context — as if explaining to a visually impaired person.\n\nImportant:\n- Do not add any comments or explanations.\n- Return ONLY the JSON.\n- All strings must be wrapped in double quotes.\n- Ensure the JSON is well-formed and properly closed." \
-    --max_new_tokens 50 \
-    --batch_size 2
-    ```
-
-
-    For batch level test:
-    ```bash
-    python /tensorrtllm_backend/tensorrt_llm/examples/multimodal/run.py \
-        --max_new_tokens 500 \
-        --hf_model_dir models/hf_models/${MODEL_NAME_Llama_11b} \
-        --visual_engine_dir models/trt_engines/${MODEL_NAME_Llama_11b}/vision_encoder \
-        --llm_engine_dir models/trt_engines/${MODEL_NAME_Llama_11b}/fp16/1-gpu \
-        --image_path=https://images.jdmagicbox.com/v2/comp/bangalore/k6/080pxx80.xx80.130731154503.x4k6/catalogue/enrich-salon-jayanagar-3rd-block-bangalore-beauty-spas-for-women-po0eyovzeh.jpg \
-        --input_text "\n Analyze the image and return a JSON object with the following structure:\n{\n  \"category_match\": \"Yes or No — Does this image belong to the category 'Beauty Salons'?\",\n  \"contains_human\": \"Yes or No — Is a person visible in the image?\",\n  \"visible_items\": \"Comma-separated list of key items seen in the image (e.g., chair, mirror, hair dryer, cosmetics).\",\n  \"text_detected\": \"List any readable text from signs or posters in the image.\",\n  \"description\": \"Write a detailed and descriptive paragraph about what is happening in the image, as if explaining it to someone who cannot see it, focusing on elements related to a Beauty Salon.\"\n}\nOnly return valid JSON. Do not include any extra explanation or markdown." \
-        --batch_size=1 # for LLaVA
+    time python3 -m tensorrt_llm.commands.build \
+        --checkpoint_dir ${LLAMA_CHECKPOINTS} \
+        --output_dir ${LLAMA_DECODER_ENGINE} \
+        --max_num_tokens 4096 \
+        --max_seq_len 2048 \
+        --workers 1 \
+        --gemm_plugin auto \
+        --max_batch_size 4 \
+        --max_encoder_input_len 6404 \
+        --input_timing_cache model.cache
     ```
 
 
