@@ -13,15 +13,14 @@ Refer my technical [Blogs](https://kashifmd.github.io/blogs/) for some standard 
     git clone https://github.com/triton-inference-server/tensorrtllm_backend.git --branch v0.18.2
     # Update the submodules
     cd tensorrtllm_backend
-    # Install git-lfs if needed
+    # Install git-lfs if needed, it install git-lfs client (Git Large File Storage) is an open-source extension for Git that handles large files by replacing them with text pointers inside Git, while the actual file contents are stored on a remote server.
     apt-get update && apt-get install git-lfs -y --no-install-recommends
+    # it initializes Git LFS for your current user account.
     git lfs install
+    # it cloned/initializes, updates all the submodules recursively
     git submodule update --init --recursive
     ```
 
-    ```markdown
-    git-lfs (Git Large File Storage) is an open-source extension for Git that handles large files by replacing them with text pointers inside Git, while the actual file contents are stored on a remote server
-    ```
     Change `v0.18.2` with the required version that you want, be sure to have latest version if setting for the first time.
     
     To check latest version of TensorRT-LLM backend git repo
