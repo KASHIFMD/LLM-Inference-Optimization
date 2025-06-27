@@ -65,6 +65,14 @@ Refer my technical [Blogs](https://kashifmd.github.io/blogs/) for some standard 
 
     LINK: `https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tritonserver/tags`
 
+    - `-it`: Allows you to interact with the container via terminal — like you would with an SSH session. You can use `-d` to make terminal to be detachable.
+    - `--net host`: Uses the host machine’s network stack directly inside the container.
+    - `--shm-size=2g`: Sets the shared memory size (/dev/shm) to 2 GB. Avoids memory errors for apps (like PyTorch, TensorRT, OpenCV) that rely on shared memory.
+    - `--ulimit memlock=-1`: Sets the maximum locked-in-memory address space to unlimited. Allows processes in the container to lock memory (prevent it from being swapped to disk). Required for performance-critical apps like GPU inference engines.
+    - `--ulimit stack=67108864`: Sets the stack size limit to 64 MB (in bytes). Prevents stack overflow errors in deep recursion or heavy multithreaded GPU workloads.
+    - `-v`: Mounts directories from host to container (bind mounts)
+    - `-e`: Sets environment variables (e.g., MODEL_NAME_Llava_7b)
+
 6. Set environment variables:
     ```bash
     export HF_MODEL_PATH_LLAMA=/models/hf_models/${MODEL_NAME_Llama_11b}/
@@ -90,14 +98,25 @@ Refer my technical [Blogs](https://kashifmd.github.io/blogs/) for some standard 
     ```
 
 8. Build engine of decoder part of the model:
+    
+    a. Prepare the model for engine building by restructuring weights, quantizing or casting to appropriate data types, and making them TensorRT-compatible. Converts the HuggingFace-format language model weights (decoder) into a format that can be used by TensorRT-LLM. 
+    
+    Execute for the first time only,
 
-    execute for the first time only,
     ```bash
     time python ${CONVERT_CHKPT_SCRIPT} \
         --model_dir ${HF_MODEL_PATH_LLAMA} \
         --output_dir ${LLAMA_CHECKPOINTS} \
         --dtype bfloat16
     ```
+
+    b. Takes the converted decoder weights and compiles them into a TensorRT engine for fast GPU inference. Includes optimizing matrix operations, memory layout, and GPU kernels for decoding tasks.
+
+    - Speeds up text generation during inference dramatically.
+
+    - Tailors the decoder model to available GPU capabilities and runtime constraints (batch size, sequence length, etc.).
+
+    - This engine is used repeatedly for serving inference requests with minimal latency.
 
     ```bash
     time python3 -m tensorrt_llm.commands.build \
@@ -110,6 +129,20 @@ Refer my technical [Blogs](https://kashifmd.github.io/blogs/) for some standard 
         --max_batch_size 4 \
         --max_encoder_input_len 6404 \
         --input_timing_cache model.cache
+    ```
+
+9. Make inference using ${RUN_CODE}:
+
+    ```bash
+    time python3 ${RUN_CODE} \
+        --visual_engine_dir ${LLAMA_ENCODER_ENGINE} \
+        --visual_engine_name visual_encoder.engine \
+        --llm_engine_dir ${LLAMA_DECODER_ENGINE} \
+        --hf_model_dir ${HF_MODEL_PATH_LLAMA} \
+        --image_path https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg \
+        --input_text "You are a visual reasoning assistant. Carefully analyze the given image and return ONLY a valid JSON object with exactly three fields: \"alttag\", \"tags\", and \"description\".\n\nRequirements:\n- Return a valid JSON object.\n- \"alttag\": A single short sentence suitable as image alt text for SEO.\n- \"tags\": A comma-separated string containing ONLY 2 to 8 short, relevant keywords. Avoid repetition or abstract concepts.\n- \"description\": The longest and most detailed description of the image, covering layout, objects, colors, style, and context — as if explaining to a visually impaired person.\n\nImportant:\n- Do not add any comments or explanations.\n- Return ONLY the JSON.\n- All strings must be wrapped in double quotes.\n- Ensure the JSON is well-formed and properly closed." \
+        --max_new_tokens 800 \
+        --batch_size 2
     ```
 
 
