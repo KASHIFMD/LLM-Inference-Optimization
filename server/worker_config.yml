@@ -1,20 +1,9 @@
 servers:
   gpu_servers:
     - name: "GPU_Server_1"
-      host: "103.42.50.106"
+      host: "A.B.C.D"
       port: 22
       containers:
-        - name: "image_enhancement"
-          process: "image_enhancement"
-          image: "image_enhancement"
-          port: 5008
-          workers: 0      # Recommended for high throughput
-          threads: 1      # Each worker gets 1 threads
-          gpu_limit: 8    # Memory limit per container process in GB
-          environment:
-            # CUDA_VISIBLE_DEVICES: "3,4"  # Restrict to GPU 0
-            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-          restart_policy: "unless-stopped"
         - name: "image_relevancy"
           process: "image_relevancy"
           image: "image_relevancy"
@@ -26,74 +15,3 @@ servers:
             # CUDA_VISIBLE_DEVICES: "3,4"  # Restrict to GPU 1
             PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
           restart_policy: "unless-stopped"
-
-    - name: "GPU_Server_2"
-      host: "103.42.50.120"
-      port: 22
-      containers:
-        - name: "image_enhancement"
-          process: "image_enhancement"
-          image: "image_enhancement"
-          port: 5008
-          workers: 0
-          threads: 1
-          gpu_limit: 6 # Memory limit per container process in GB
-          environment:
-            # CUDA_VISIBLE_DEVICES: "0"
-            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-          restart_policy: "unless-stopped"
-        - name: "image_relevancy"
-          process: "image_relevancy"
-          image: "image_relevancy"
-          port: 5008
-          workers: 0
-          threads: 1
-          gpu_limit: 40 # Memory limit per container process in GB
-          environment:
-            # CUDA_VISIBLE_DEVICES: "0"
-            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-          restart_policy: "unless-stopped"
-
-  cpu_servers:
-    - name: "CPU_Server_1"
-      host: "192.168.24.151"
-      port: 22
-      containers:
-        - name: "content_image_optimization"
-          process: "content_image_optimization"
-          image: "content_image_optimization"
-          port: 5008
-          workers: 1           # More workers since CPU-based
-          threads: 1           # Multi-threading to leverage CPU
-          # memory_limit: 8GB    # Memory cap to avoid overload
-          environment:
-            # MAX_WORKERS: "4"   # Custom variable for internal usage
-            # OMP_NUM_THREADS: "4"
-          restart_policy: "unless-stopped"
-
-    - name: "CPU_Server_2"
-      host: "192.168.40.172"
-      port: 22
-      containers:
-        - name: "content_image_optimization"
-          process: "content_image_optimization"
-          image: "content_image_optimization"
-          port: 5008
-          workers: 4           # More workers since CPU-based
-          threads: 1           # Multi-threading to leverage CPU
-          # memory_limit: 8GB    # Memory cap to avoid overload
-          environment:
-            # MAX_WORKERS: "4"   # Custom variable for internal usage
-            # OMP_NUM_THREADS: "4"
-          restart_policy: "unless-stopped"
-
-# global_settings:
-#   log_level: "info"  # Options: debug, info, warning, error
-#   health_check:
-#     interval: 60s    # Health check every 60 seconds
-#     retries: 3       # Restart after 3 failures
-#   monitoring:
-#     enabled: true
-#     tool: "Prometheus"  # Recommended for metrics collection
-#   load_balancing:
-#     strategy: "round_robin"
